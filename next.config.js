@@ -1,6 +1,6 @@
 const path = require('path');
 
-const appRoot = __dirname;
+const workspaceRoot = path.join(__dirname, '../..');
 const additionalDevOrigins = (process.env.DEV_ALLOWED_ORIGINS || '')
   .split(',')
   .map((origin) => origin.trim())
@@ -19,11 +19,12 @@ const nextConfig = {
   ],
   transpilePackages: ['@vapor-ui/core', '@vapor-ui/icons'],
   turbopack: {
-    root: appRoot
+    root: workspaceRoot
   },
   // Docker 빌드를 위한 standalone 출력 모드 (개발 환경에는 영향 없음)
   output: 'standalone',
-  outputFileTracingRoot: appRoot
+  // monorepo에서 standalone 빌드 시 중첩 경로 방지
+  outputFileTracingRoot: workspaceRoot
 };
 
 module.exports = nextConfig;

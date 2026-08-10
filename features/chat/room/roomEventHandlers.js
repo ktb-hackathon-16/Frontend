@@ -34,24 +34,28 @@ export const processLoadedRoomMessages = ({
   return nextMessages;
 };
 
-export const applyReadReceipts = (messages, { userId, messageIds, timestamp }) =>
-  messages.map(msg => {
-    if (!messageIds.includes(msg._id)) {
-      return msg;
-    }
+// [CHANGED] features/chat/room/roomEventHandlers.js: applyReadReceipts가 메시지 배열을
+// 순회하며 각 메시지의 readers 배열을 갱신하던 방식(Last Read Watermark 전환 전)에서,
+// room 단위의 읽음 워터마크 맵 하나만 갱신하는 방식으로 바뀌었다.
+// 서버가 보내는 payload도 { userId, messageIds, timestamp } -> { userId, lastReadAt }로
+// 가벼워졌다 (참고: apps/backend .../MessagesReadResponse.java).
+export const applyReadWatermark = (room, { userId, lastReadAt }) => ({
+  ...room,
+  readReceipts: {
+    ...(room?.readReceipts || {}),
+    [userId]: lastReadAt,
+  },
+});
 
-    const alreadyRead = msg.readers?.some(reader =>
-      reader.userId === userId || reader._id === userId
-    );
-    if (alreadyRead) {
-      return msg;
+// 방 입장(joinRoomSuccess) 시 받은 참가자별 초기 워터마크 스냅샷을
+// { [userId]: lastReadAt } 맵으로 변환한다.
+export const toReadReceiptsMap = (participantReadStates = []) =>
+  participantReadStates.reduce((acc, state) => {
+    if (state?.userId && state?.lastReadAt) {
+      acc[state.userId] = state.lastReadAt;
     }
-
-    return {
-      ...msg,
-      readers: [...(msg.readers || []), { userId, readAt: timestamp || new Date() }],
-    };
-  });
+    return acc;
+  }, {});
 
 export const appendIncomingMessage = (messages, incoming) => {
   if (!incoming?._id) {
@@ -107,9 +111,12 @@ export const createRoomEventHandlers = ({
       if (!mountedRef.current) return;
       setRoom(prev => ({ ...prev, participants: participants || [] }));
     },
+    // [CHANGED] onMessagesRead: setMessages(메시지별 readers 갱신) -> setRoom(방 단위
+    // readReceipts 워터마크 갱신). ReadStatus 컴포넌트가 room.readReceipts와
+    // 메시지 timestamp를 비교해 안읽음 인원 수를 계산한다.
     onMessagesRead: (payload) => {
       if (!mountedRef.current) return;
-      setMessages(prev => applyReadReceipts(prev, payload));
+      setRoom(prev => applyReadWatermark(prev, payload));
     },
     onMessage: (incoming) => {
       if (!mountedRef.current || messageProcessingRef.current) return;
