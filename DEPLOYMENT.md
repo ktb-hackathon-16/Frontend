@@ -1,113 +1,116 @@
 # Frontend 배포 가이드
 
-이 repo는 프론트엔드 전용 repo입니다. 운영 실행 기준은 Docker 이미지와
-`docker-compose.yaml`입니다.
+운영 배포는 **latest 태그를 쓰지 않고**, 로컬에서 태그가 붙은 Docker 이미지를
+빌드한 뒤 Docker Hub에 push하고 EC2에서 pull/run 합니다.
 
-주의: Next.js의 `NEXT_PUBLIC_*` 값은 클라이언트 번들에 들어가므로 **이미지 빌드
-시점 값**이 중요합니다. EC2의 `frontend-app.env`는 컨테이너 런타임 기준을
-정리하는 용도이고, 새 이미지를 만들 때도 같은 값을 build arg로 넣어야 합니다.
+Next.js의 `NEXT_PUBLIC_*` 값은 브라우저 번들에 **빌드 시점에 포함**됩니다.
+따라서 이미지 빌드 시 ALB public DNS를 넣어야 하며, `10.0.x.x` private IP나
+직접 포트는 넣지 않습니다.
 
-## 구조
+## 기본 정보
 
-- 로컬 개발 env: `.env.local`
-- 로컬/빌드용 production env: `.env.production`
-- 운영 env 예시: `frontend-app.env.example`
-- EC2 운영 env: `/etc/ktb/frontend-app.env`
+- Docker Hub image: `youngjin179/ktb-frontend:<TAG>`
+- Frontend EC2: `10.0.2.228`
+- ALB: `http://public-ktb-alb-974381789.ap-northeast-2.elb.amazonaws.com`
+- EC2 env: `/etc/ktb/frontend-app.env`
 - EC2 compose: `/home/ubuntu/ktb-chat-frontend/docker-compose.yaml`
-- 현재 운영 이미지: `youngjin179/ktb-frontend:87c9841-fe-fix3`
 
-운영에서는 로컬 `.env.local`, `.env.production`을 서버에 복사하지 않습니다.
+## 1. 태그 설정
 
-## 1. Docker 이미지 빌드
+Frontend repo root에서 실행합니다.
 
 ```bash
-cd apps/frontend
+export DOCKER_NS=youngjin179
+export TAG=$(git rev-parse --short HEAD)-smoke1
+export ALB_URL=http://public-ktb-alb-974381789.ap-northeast-2.elb.amazonaws.com
+```
+
+예:
+
+```text
+youngjin179/ktb-frontend:abc1234-smoke1
+```
+
+## 2. Docker Hub 로그인
+
+```bash
+docker login
+```
+
+## 3. 이미지 빌드/푸시
+
+```bash
 docker build \
-  --build-arg NEXT_PUBLIC_API_URL=http://goorm-ktb-016.goorm.team/api \
-  --build-arg NEXT_PUBLIC_SOCKET_URL=http://goorm-ktb-016.goorm.team \
-  -t youngjin179/ktb-frontend:새태그 .
+  --build-arg NEXT_PUBLIC_API_URL=$ALB_URL \
+  --build-arg NEXT_PUBLIC_SOCKET_URL=$ALB_URL \
+  -t $DOCKER_NS/ktb-frontend:$TAG \
+  .
+
+docker push $DOCKER_NS/ktb-frontend:$TAG
 ```
 
-## 2. Docker 이미지 push
+## 4. EC2 env 확인
 
-```bash
-docker push youngjin179/ktb-frontend:새태그
+Frontend EC2에서 `/etc/ktb/frontend-app.env`를 관리합니다. 로컬 `.env.local`,
+`.env.production`은 서버에 복사하지 않습니다.
+
+필수 ALB URL:
+
+```env
+NEXT_PUBLIC_API_URL=http://public-ktb-alb-974381789.ap-northeast-2.elb.amazonaws.com
+NEXT_PUBLIC_SOCKET_URL=http://public-ktb-alb-974381789.ap-northeast-2.elb.amazonaws.com
 ```
 
-이미지 태그를 바꿨다면 `docker-compose.yaml`의 기본 이미지 또는 실행 시
-`FRONTEND_IMAGE` 값을 같이 바꿉니다.
-
-## 3. EC2 운영 env 준비
-
-Frontend EC2에서 최초 1회만 설정합니다.
+확인:
 
 ```bash
-sudo mkdir -p /etc/ktb
-sudo nano /etc/ktb/frontend-app.env
-sudo chown root:root /etc/ktb/frontend-app.env
-sudo chmod 600 /etc/ktb/frontend-app.env
+sudo awk -F= '/^(NEXT_PUBLIC_API_URL|NEXT_PUBLIC_SOCKET_URL)=/ {print $1}' /etc/ktb/frontend-app.env
 ```
 
-필수 키는 `frontend-app.env.example`을 기준으로 채웁니다.
-
-## 4. compose 파일 배포
-
-로컬에서 실행합니다.
+## 5. compose 파일 배포
 
 ```bash
-cd apps/frontend
 make deploy-compose DEPLOY_SERVERS=ktb-frontend
 ```
 
-`make deploy-compose`는 아래 명령을 짧게 감싼 것입니다.
+`make deploy-compose`는 아래 명령의 wrapper입니다.
 
 ```bash
 rsync -az docker-compose.yaml ktb-frontend:/home/ubuntu/ktb-chat-frontend/
 ```
 
-## 5. EC2에서 컨테이너 재실행
-
-로컬에서 실행합니다.
+## 6. EC2에서 새 이미지 실행
 
 ```bash
-cd apps/frontend
+FRONTEND_IMAGE=$DOCKER_NS/ktb-frontend:$TAG \
 make compose-up-servers DEPLOY_SERVERS=ktb-frontend
 ```
 
-`make compose-up-servers`는 EC2에서 아래 명령을 실행하는 wrapper입니다.
+직접 EC2에서 실행하려면:
 
 ```bash
+export TAG=<실제_TAG>
+sudo docker pull youngjin179/ktb-frontend:$TAG
+
 cd /home/ubuntu/ktb-chat-frontend
-sudo docker-compose -f docker-compose.yaml up -d
+sudo env FRONTEND_IMAGE=youngjin179/ktb-frontend:$TAG \
+  docker-compose -f docker-compose.yaml up -d
 ```
 
-이미지 태그를 바꿔서 실행하려면:
-
-```bash
-FRONTEND_IMAGE=youngjin179/ktb-frontend:새태그 \
-make compose-up-servers DEPLOY_SERVERS=ktb-frontend
-```
-
-## 6. 확인
-
-Frontend EC2에서 확인합니다.
+## 7. 확인
 
 ```bash
 sudo docker ps --filter name=frontend-app
 curl -I http://localhost:3000
+sudo docker logs -f frontend-app
 ```
 
-정상 포트:
+## make는 왜 쓰나?
 
-```text
-0.0.0.0:3000->3000/tcp
-```
+`make`는 Docker를 대체하지 않습니다. SSH/rsync/docker-compose 명령을 짧게
+부르는 wrapper입니다.
 
-## 왜 make를 쓰나?
-
-`make`는 필수가 아닙니다. 긴 SSH/rsync/docker-compose 명령을 짧게 부르는
-wrapper입니다.
-
-- 이미지를 새로 만들 때: `docker build`, `docker push`
-- 서버에서 실행할 때: `docker-compose up -d`
-- 반복 명령을 줄이고 싶을 때: `make deploy-compose`, `make compose-up-servers`
+- 이미지 생성: `docker build`
+- 이미지 업로드: `docker push`
+- EC2 실행: `docker-compose up -d`
+- 반복 명령 단축: `make deploy-compose`, `make compose-up-servers`
