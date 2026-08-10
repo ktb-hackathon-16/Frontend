@@ -1,0 +1,16 @@
+services:
+  frontend-app:
+    image: ${FRONTEND_IMAGE:-youngjin179/ktb-frontend:87c9841-fe-fix3}
+    container_name: frontend-app
+    restart: unless-stopped
+    env_file:
+      - ${FRONTEND_ENV_FILE:-/etc/ktb/frontend-app.env}
+    ports:
+      - "${FRONTEND_HTTP_PORT:-3000}:3000"
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    container_name: node-exporter
+    restart: unless-stopped
+    ports:
+      - "${NODE_EXPORTER_PORT:-9100}:9100"

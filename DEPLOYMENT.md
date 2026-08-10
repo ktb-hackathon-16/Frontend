@@ -21,6 +21,45 @@ cd apps/frontend
 make deploy
 ```
 
+## Docker Compose 운영 실행
+
+Docker 이미지 기반으로 운영할 때는 repo의 `docker-compose.yaml`을 배포하고,
+실제 운영 환경 변수는 서버의 `/etc/ktb/frontend-app.env`에만 둡니다. 로컬
+`.env.local`, `.env.production`은 서버에 복사하지 않습니다.
+
+최초 1회, Frontend EC2에서 운영 env 파일을 고정합니다.
+
+```bash
+sudo mkdir -p /etc/ktb
+sudo cp /home/ubuntu/ktb-chat-frontend/.env /etc/ktb/frontend-app.env
+sudo chown root:root /etc/ktb/frontend-app.env
+sudo chmod 600 /etc/ktb/frontend-app.env
+```
+
+compose 파일을 서버에 배포한 뒤 실행합니다.
+
+```bash
+cd /home/ubuntu/ktb-chat-frontend
+sudo docker rm -f frontend-app || true
+sudo docker-compose -f docker-compose.yaml up -d
+```
+
+기본 실행값은 다음과 같습니다.
+
+- 이미지: `youngjin179/ktb-frontend:87c9841-fe-fix3`
+- env 파일: `/etc/ktb/frontend-app.env`
+- HTTP: `3000 -> 3000`
+
+로컬에서 compose 파일만 배포하고 원격에서 재실행하려면:
+
+```bash
+make deploy-compose DEPLOY_SERVERS=your-frontend-server1
+make compose-up-servers DEPLOY_SERVERS=your-frontend-server1
+```
+
+주의: `NEXT_PUBLIC_*` 값은 Next.js 클라이언트 번들에 빌드 시점에 포함됩니다. 이미지를
+새로 만들 때는 `.env.production` 또는 동일한 build-time 환경 변수로 빌드해야 합니다.
+
 ### 2. 자동으로 수행되는 작업
 
 #### 로컬 (빌드 단계)
