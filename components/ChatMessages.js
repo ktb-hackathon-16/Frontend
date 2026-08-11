@@ -30,6 +30,10 @@ const EmptyMessages = React.memo(() => (
 ));
 EmptyMessages.displayName = 'EmptyMessages';
 
+const getUserId = (user) => user?._id || user?.id || user;
+
+const getMessageSenderId = (message) => getUserId(message?.sender);
+
 const ChatMessages = ({
   messages = [],
   currentUser = null,
@@ -42,9 +46,11 @@ const ChatMessages = ({
   onMessageVisible = null // [ADDED] ReadStatus -> useReadReceiptDebounce로 이어지는 콜백. 각 메시지 컴포넌트에 그대로 전달된다.
 }) => {
   // 자동 스크롤 훅 (스크롤 복원 기능 포함)
+  const currentUserId = useMemo(() => getUserId(currentUser), [currentUser]);
+
   const { containerRef } = useAutoScroll(
     messages,
-    currentUser?.id,
+    currentUserId,
     loadingMessages,
     100 // 하단 100px 이내면 자동 스크롤
   );
@@ -60,14 +66,9 @@ const ChatMessages = ({
     }
   );
   const isMine = useCallback((msg) => {
-    if (!msg?.sender || !currentUser?.id) return false;
-    
-    return (
-      msg.sender._id === currentUser.id || 
-      msg.sender.id === currentUser.id ||
-      msg.sender === currentUser.id
-    );
-  }, [currentUser?.id]);
+    const senderId = getMessageSenderId(msg);
+    return Boolean(senderId && currentUserId && senderId === currentUserId);
+  }, [currentUserId]);
 
   const allMessages = useMemo(() => {
     if (!Array.isArray(messages)) return [];

@@ -69,6 +69,16 @@ export const useAutoScroll = (
     }, 300);
   }, []);
 
+  const scrollToBottomAfterLayout = useCallback(() => {
+    scrollToBottom('auto');
+
+    const schedule = typeof window !== 'undefined' && window.requestAnimationFrame
+      ? window.requestAnimationFrame
+      : (callback) => setTimeout(callback, 0);
+
+    schedule(() => scrollToBottom('auto'));
+  }, [scrollToBottom]);
+
   /**
    * 초기 메시지는 화면이 그려지기 전에 최하단으로 즉시 이동한다.
    *
@@ -183,15 +193,15 @@ export const useAutoScroll = (
 
     // 자동 스크롤 조건 확인
     if (isMyMessage) {
-      // 내가 쓴 메시지 → 무조건 스크롤
-      scrollToBottom('smooth');
+      // 내가 쓴 메시지 → virtual list 높이 재계산 이후에도 최하단 보장
+      scrollToBottomAfterLayout();
     } else if (isNearBottomRef.current) {
       // 남이 쓴 메시지 + 하단 근처에 있음 → 자동 스크롤
       scrollToBottom('smooth');
     } else {
       // 남이 쓴 메시지 + 상단에 있음 → 스크롤 안함
     }
-  }, [messages, currentUserId, scrollToBottom, isLoadingMessages]);
+  }, [messages, currentUserId, scrollToBottom, scrollToBottomAfterLayout, isLoadingMessages]);
 
   return {
     containerRef,
