@@ -1,7 +1,11 @@
 import React from 'react';
 import { render, waitFor, fireEvent } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import ChatInput from '../ChatInput';
+
+vi.mock('../EmojiPicker', () => ({
+  default: () => React.createElement('em-emoji-picker'),
+}));
 
 describe('ChatInput', () => {
   it('renders the lazy emoji picker under React 19', async () => {

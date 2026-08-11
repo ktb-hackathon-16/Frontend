@@ -1,5 +1,7 @@
 import { deriveUniqueSortedMessages } from '../messages/useMessageList';
 
+const MESSAGE_BATCH_DELAY = 50;
+
 export const processLoadedRoomMessages = ({
   loadedMessages,
   hasMore,
@@ -69,6 +71,14 @@ export const appendIncomingMessage = (messages, incoming) => {
   return [...messages, incoming];
 };
 
+export const appendIncomingMessages = (messages, incomingMessages) => {
+  if (!Array.isArray(incomingMessages) || incomingMessages.length === 0) {
+    return messages;
+  }
+
+  return incomingMessages.reduce(appendIncomingMessage, messages);
+};
+
 export const createRoomEventHandlers = ({
   mountedRef,
   messageProcessingRef,
@@ -86,6 +96,36 @@ export const createRoomEventHandlers = ({
   handleReactionUpdate,
   showRejectedMessage,
 }) => {
+  const pendingIncomingMessages = [];
+  let pendingMessageFlushTimer = null;
+
+  const flushIncomingMessages = () => {
+    pendingMessageFlushTimer = null;
+    if (!mountedRef.current || pendingIncomingMessages.length === 0) {
+      pendingIncomingMessages.length = 0;
+      return;
+    }
+
+    const nextMessages = pendingIncomingMessages.splice(0);
+    setMessages(prev => appendIncomingMessages(prev, nextMessages));
+  };
+
+  const scheduleIncomingMessageFlush = () => {
+    if (pendingMessageFlushTimer != null) {
+      return;
+    }
+
+    pendingMessageFlushTimer = setTimeout(flushIncomingMessages, MESSAGE_BATCH_DELAY);
+  };
+
+  const clearPendingIncomingMessages = () => {
+    if (pendingMessageFlushTimer != null) {
+      clearTimeout(pendingMessageFlushTimer);
+      pendingMessageFlushTimer = null;
+    }
+    pendingIncomingMessages.length = 0;
+  };
+
   const handlePreviousMessages = (response) => {
     if (!mountedRef.current || messageProcessingRef.current) return;
     try {
@@ -93,9 +133,12 @@ export const createRoomEventHandlers = ({
       if (!response || typeof response !== 'object') {
         throw new Error('Invalid response format');
       }
-      const { messages: loadedMessages = [], hasMore } = response;
+      const { messages: loadedMessages = [], hasMore, participantReadStates } = response;
       const isInitialLoad = !initialLoadCompletedRef.current;
       processMessages(loadedMessages, hasMore, isInitialLoad);
+      if (participantReadStates) {
+        setRoom(prev => ({ ...prev, readReceipts: toReadReceiptsMap(participantReadStates) }));
+      }
       setLoadingMessages(false);
     } catch (error) {
       setLoadingMessages(false);
@@ -122,7 +165,8 @@ export const createRoomEventHandlers = ({
       if (!mountedRef.current || messageProcessingRef.current) return;
       if (!incoming?._id || processedMessageIds.current.has(incoming._id)) return;
       processedMessageIds.current.add(incoming._id);
-      setMessages(prev => appendIncomingMessage(prev, incoming));
+      pendingIncomingMessages.push(incoming);
+      scheduleIncomingMessageFlush();
     },
     onPreviousMessagesLoaded: handlePreviousMessages,
     onMessageReactionUpdate: (data) => {
@@ -131,10 +175,12 @@ export const createRoomEventHandlers = ({
     },
     onSessionEnded: () => {
       if (!mountedRef.current) return;
+      clearPendingIncomingMessages();
       cleanup();
       logout();
       onReplace('/?error=session_expired');
     },
+    onDispose: clearPendingIncomingMessages,
     onError: (error) => {
       if (!mountedRef.current) return;
       console.error('Socket error:', error);

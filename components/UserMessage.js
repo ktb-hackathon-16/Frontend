@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { VStack, HStack } from '@vapor-ui/core';
 import MessageContent from './MessageContent';
 import MessageActions from './MessageActions';
@@ -16,7 +16,7 @@ const UserMessage = ({
 }) => {
   // 메시지 DOM 요소에 대한 ref 생성
   const messageDomRef = useRef(null);
-  const formattedTime = new Date(msg.timestamp).toLocaleString('ko-KR', {
+  const formattedTime = useMemo(() => new Date(msg.timestamp).toLocaleString('ko-KR', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -24,9 +24,9 @@ const UserMessage = ({
     minute: '2-digit',
     second: '2-digit',
     hour12: false
-  }).replace(/\./g, '년').replace(/\s/g, ' ').replace('일 ', '일 ');
+  }).replace(/\./g, '년').replace(/\s/g, ' ').replace('일 ', '일 '), [msg.timestamp]);
 
-  const user = isMine ? currentUser : msg.sender;
+  const user = useMemo(() => isMine ? currentUser : msg.sender, [currentUser, isMine, msg.sender]);
 
   return (
     <div className="my-4" ref={messageDomRef} data-testid="message-container">
@@ -95,6 +95,7 @@ const UserMessage = ({
               messageRef={messageDomRef}
               currentUserId={currentUser?._id || currentUser?.id}
               onVisible={onMessageVisible}
+              trackVisibility={!isMine}
             />
           </HStack>
         </div>

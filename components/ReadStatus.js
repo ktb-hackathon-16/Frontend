@@ -37,7 +37,8 @@ const ReadStatus = ({
   messageId = null,
   messageRef = null, // 메시지 요소의 ref 추가
   currentUserId = null, // 현재 사용자 ID 추가
-  onVisible = null // [ADDED] 제공되면 emit을 상위(debounce 훅)에 위임, 없으면 예전처럼 직접 emit
+  onVisible = null, // [ADDED] 제공되면 emit을 상위(debounce 훅)에 위임, 없으면 예전처럼 직접 emit
+  trackVisibility = true
 }) => {
   const [hasMarkedAsRead, setHasMarkedAsRead] = useState(false);
   const statusRef = useRef(null);
@@ -102,7 +103,7 @@ const ReadStatus = ({
 
   // Intersection Observer 설정
   useEffect(() => {
-    if (!messageRef?.current || !currentUserId || hasMarkedAsRead || messageType === 'system') {
+    if (!trackVisibility || !messageRef?.current || !currentUserId || hasMarkedAsRead || messageType === 'system') {
       return;
     }
 
@@ -136,7 +137,7 @@ const ReadStatus = ({
         observerRef.current.disconnect();
       }
     };
-  }, [messageRef, currentUserId, hasMarkedAsRead, messageType, readReceipts, hasParticipantRead, markMessageAsRead]);
+  }, [messageRef, currentUserId, hasMarkedAsRead, messageType, readReceipts, hasParticipantRead, markMessageAsRead, trackVisibility]);
 
   // 시스템 메시지는 읽음 상태 표시 안 함
   if (messageType === 'system') {

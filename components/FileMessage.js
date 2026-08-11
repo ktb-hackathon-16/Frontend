@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import {
   PdfIcon as FileText,
   ImageIcon as Image,
@@ -44,7 +44,7 @@ const FileMessage = ({
     return null;
   }
 
-  const formattedTime = new Date(msg.timestamp).toLocaleString('ko-KR', {
+  const formattedTime = useMemo(() => new Date(msg.timestamp).toLocaleString('ko-KR', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -52,9 +52,9 @@ const FileMessage = ({
     minute: '2-digit',
     second: '2-digit',
     hour12: false
-  }).replace(/\./g, '년').replace(/\s/g, ' ').replace('일 ', '일 ');
+  }).replace(/\./g, '년').replace(/\s/g, ' ').replace('일 ', '일 '), [msg.timestamp]);
 
-  const getFileIcon = () => {
+  const getFileIcon = useCallback(() => {
     const mimetype = msg.file?.mimetype || '';
     const iconProps = { className: "w-5 h-5 flex-shrink-0" };
 
@@ -62,7 +62,7 @@ const FileMessage = ({
     if (mimetype.startsWith('video/')) return <Film {...iconProps} color="#2196F3" />;
     if (mimetype.startsWith('audio/')) return <Music {...iconProps} color="#9C27B0" />;
     return <FileText {...iconProps} color="#ffffff" />;
-  };
+  }, [msg.file?.mimetype]);
 
   const getDecodedFilename = (encodedFilename) => {
     try {
@@ -376,6 +376,7 @@ const FileMessage = ({
               messageRef={messageDomRef}
               currentUserId={currentUser?._id || currentUser?.id}
               onVisible={onMessageVisible}
+              trackVisibility={!isMine}
             />
           </HStack>
         </div>

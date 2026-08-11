@@ -5,6 +5,7 @@ import FileMessage from './FileMessage';
 import UserMessage from './UserMessage';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import { useAutoScroll } from '../hooks/useAutoScroll';
+import { useVirtualList } from '../hooks/useVirtualList';
 
 const LoadingIndicator = React.memo(() => (
   <div className="loading-messages">
@@ -77,7 +78,18 @@ const ChatMessages = ({
     });
   }, [messages]);
 
-  const renderMessage = useCallback((msg, idx) => {
+  const {
+    totalSize,
+    virtualItems,
+    measureElement,
+  } = useVirtualList({
+    itemCount: allMessages.length,
+    containerRef,
+    estimateSize: 112,
+    overscan: 10,
+  });
+
+  const renderMessage = useCallback((msg, idx, virtualItem) => {
     if (!msg) return null;
 
     const commonProps = {
@@ -96,7 +108,13 @@ const ChatMessages = ({
     return (
       <div
         key={msg._id || `msg-${idx}`}
+        ref={(node) => measureElement(idx, node)}
         style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          transform: `translateY(${virtualItem.start}px)`,
           contentVisibility: 'auto',
           containIntrinsicSize: '1px 96px',
         }}
@@ -110,7 +128,7 @@ const ChatMessages = ({
       />
       </div>
     );
-  }, [currentUser, room, isMine, onReactionAdd, onReactionRemove, onMessageVisible]);
+  }, [currentUser, room, isMine, measureElement, onReactionAdd, onReactionRemove, onMessageVisible]);
 
   return (
     <VStack
@@ -148,7 +166,18 @@ const ChatMessages = ({
       {allMessages.length === 0 ? (
         <EmptyMessages />
       ) : (
-        allMessages.map((msg, idx) => renderMessage(msg, idx))
+        <div
+          style={{
+            height: `${totalSize}px`,
+            position: 'relative',
+            width: '100%',
+          }}
+          data-testid="virtual-message-list"
+        >
+          {virtualItems.map((virtualItem) => (
+            renderMessage(allMessages[virtualItem.index], virtualItem.index, virtualItem)
+          ))}
+        </div>
       )}
     </VStack>
   );

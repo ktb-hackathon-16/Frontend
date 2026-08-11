@@ -87,4 +87,24 @@ describe('ChatMessages', () => {
     });
     expect(screen.getByText('이전 메시지를 불러오는 중...')).toBeInTheDocument();
   });
+
+  it('keeps only a window of many messages in the DOM', () => {
+    const messages = Array.from({ length: 120 }, (_, index) => ({
+      _id: `message-${index}`,
+      content: `message ${index}`,
+      timestamp: new Date(Date.UTC(2026, 5, 20, 11, index)).toISOString(),
+      sender: { _id: 'other' },
+    }));
+
+    render(
+      React.createElement(ChatMessages, {
+        messages,
+        currentUser: { id: 'me' },
+        hasMoreMessages: false,
+      })
+    );
+
+    expect(screen.getAllByTestId('message').length).toBeLessThan(messages.length);
+    expect(screen.getByTestId('virtual-message-list')).toBeInTheDocument();
+  });
 });
