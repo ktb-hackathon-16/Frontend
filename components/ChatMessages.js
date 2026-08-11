@@ -39,19 +39,23 @@ const ChatMessages = ({
   onReactionRemove = () => {},
   onLoadMore = () => {}
 }) => {
-  // 무한 스크롤 훅
-  const { sentinelRef } = useInfiniteScroll(
-    onLoadMore,
-    hasMoreMessages,
-    loadingMessages
-  );
-
   // 자동 스크롤 훅 (스크롤 복원 기능 포함)
-  const { containerRef, scrollToBottom, isNearBottom } = useAutoScroll(
+  const { containerRef } = useAutoScroll(
     messages,
     currentUser?.id,
     loadingMessages,
     100 // 하단 100px 이내면 자동 스크롤
+  );
+
+  // 초기 최하단 이동이 끝난 뒤에만 이전 메시지 감지를 시작한다.
+  const { sentinelRef } = useInfiniteScroll(
+    onLoadMore,
+    hasMoreMessages,
+    loadingMessages,
+    {
+      enabled: messages.length > 0,
+      rootRef: containerRef,
+    }
   );
   const isMine = useCallback((msg) => {
     if (!msg?.sender || !currentUser?.id) return false;
@@ -109,7 +113,7 @@ const ChatMessages = ({
   return (
     <VStack
       ref={containerRef}
-      className="h-full overflow-y-auto overflow-x-hidden scroll-smooth [overflow-scrolling:touch]"
+      className="h-full overflow-y-auto overflow-x-hidden [overflow-scrolling:touch]"
       $css={{
         gap: '$200',
         padding: '$300',
