@@ -24,7 +24,14 @@ vi.mock('../FileMessage', () => ({
 }));
 
 vi.mock('../UserMessage', () => ({
-  default: ({ msg }) => React.createElement('div', { 'data-testid': 'message' }, msg.content),
+  default: ({ msg, isMine }) => React.createElement(
+    'div',
+    {
+      'data-testid': 'message',
+      'data-mine': String(Boolean(isMine)),
+    },
+    msg.content
+  ),
 }));
 
 describe('ChatMessages', () => {
@@ -86,6 +93,25 @@ describe('ChatMessages', () => {
       containIntrinsicSize: '1px 96px',
     });
     expect(screen.getByText('이전 메시지를 불러오는 중...')).toBeInTheDocument();
+  });
+
+  it('recognizes the current user by _id when deciding own messages', () => {
+    render(
+      React.createElement(ChatMessages, {
+        messages: [
+          {
+            _id: 'message-1',
+            content: 'my message',
+            timestamp: '2026-06-20T11:00:00.000Z',
+            sender: { _id: 'me' },
+          },
+        ],
+        currentUser: { _id: 'me' },
+        hasMoreMessages: false,
+      })
+    );
+
+    expect(screen.getByText('my message')).toHaveAttribute('data-mine', 'true');
   });
 
   it('keeps only a window of many messages in the DOM', () => {
