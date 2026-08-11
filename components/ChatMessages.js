@@ -34,6 +34,8 @@ const getUserId = (user) => user?._id || user?.id || user;
 
 const getMessageSenderId = (message) => getUserId(message?.sender);
 
+const RECENT_OWN_FILE_MESSAGE_PIN_MS = 15_000;
+
 const ChatMessages = ({
   messages = [],
   currentUser = null,
@@ -79,6 +81,24 @@ const ChatMessages = ({
     });
   }, [messages]);
 
+  const pinnedMessageIndexes = useMemo(() => {
+    const now = Date.now();
+
+    return allMessages.reduce((indexes, message, index) => {
+      if (message?.type !== 'file' || !isMine(message)) {
+        return indexes;
+      }
+
+      const timestamp = new Date(message.timestamp).getTime();
+      if (Number.isNaN(timestamp) || now - timestamp > RECENT_OWN_FILE_MESSAGE_PIN_MS) {
+        return indexes;
+      }
+
+      indexes.push(index);
+      return indexes;
+    }, []);
+  }, [allMessages, isMine]);
+
   const {
     totalSize,
     virtualItems,
@@ -88,6 +108,7 @@ const ChatMessages = ({
     containerRef,
     estimateSize: 112,
     overscan: 10,
+    pinnedIndexes: pinnedMessageIndexes,
   });
 
   const renderMessage = useCallback((msg, idx, virtualItem) => {

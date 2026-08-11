@@ -26,6 +26,7 @@ export const useVirtualList = ({
   estimateSize = DEFAULT_ITEM_HEIGHT,
   overscan = DEFAULT_OVERSCAN,
   initialViewportItems = DEFAULT_INITIAL_VIEWPORT_ITEMS,
+  pinnedIndexes = [],
 }) => {
   const sizeMapRef = useRef(new Map());
   const itemObserversRef = useRef(new Map());
@@ -108,19 +109,25 @@ export const useVirtualList = ({
   }, [itemCount, offsets, overscan, viewport.height, viewport.scrollTop]);
 
   const virtualItems = useMemo(() => {
-    const items = [];
+    const indexes = new Set();
 
     for (let index = range.startIndex; index < range.endIndex; index += 1) {
-      items.push({
-        index,
-        key: index,
-        start: offsets[index],
-        size: offsets[index + 1] - offsets[index],
-      });
+      indexes.add(index);
     }
 
-    return items;
-  }, [offsets, range.endIndex, range.startIndex]);
+    for (const index of pinnedIndexes) {
+      if (Number.isInteger(index) && index >= 0 && index < itemCount) {
+        indexes.add(index);
+      }
+    }
+
+    return [...indexes].sort((a, b) => a - b).map((index) => ({
+      index,
+      key: index,
+      start: offsets[index],
+      size: offsets[index + 1] - offsets[index],
+    }));
+  }, [itemCount, offsets, pinnedIndexes, range.endIndex, range.startIndex]);
 
   const measureElement = useCallback((index, node) => {
     itemObserversRef.current.get(index)?.disconnect();

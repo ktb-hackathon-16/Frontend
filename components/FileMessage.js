@@ -15,6 +15,15 @@ import ReadStatus from './ReadStatus';
 import fileService from '@/services/fileService';
 import { useAuth } from '@/contexts/AuthContext';
 
+const getFilePreviewUrl = (file, token, sessionId) => {
+  if (!file) return '';
+
+  const directUrl = file.previewUrl || file.thumbnailUrl || file.url || file.publicUrl || file.cdnUrl;
+  if (directUrl) return directUrl;
+
+  return fileService.getPreviewUrl(file, token, sessionId, true);
+};
+
 const FileMessage = ({
   msg = {},
   isMine = false,
@@ -26,11 +35,13 @@ const FileMessage = ({
 }) => {
   const { user } = useAuth();
   const [error, setError] = useState(null);
+  const [previewError, setPreviewError] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const messageDomRef = useRef(null);
   useEffect(() => {
     if (msg?.file) {
-      const url = fileService.getPreviewUrl(msg.file, user?.token, user?.sessionId, true);
+      setPreviewError(null);
+      const url = getFilePreviewUrl(msg.file, user?.token, user?.sessionId);
       setPreviewUrl(url);
       console.debug('Preview URL generated:', {
         filename: msg.file.filename,
@@ -166,11 +177,19 @@ const FileMessage = ({
         );
       }
 
-      if (!user?.token || !user?.sessionId) {
-        throw new Error('인증 정보가 없습니다.');
+      const previewUrl = getFilePreviewUrl(msg.file, user?.token, user?.sessionId);
+
+      if (!previewUrl) {
+        return (
+          <div className="flex items-center justify-center h-full bg-gray-100">
+            <Image className="w-8 h-8 text-gray-400" />
+          </div>
+        );
       }
 
-      const previewUrl = fileService.getPreviewUrl(msg.file, user?.token, user?.sessionId, true);
+      if (!msg.file?.previewUrl && !msg.file?.thumbnailUrl && !msg.file?.url && (!user?.token || !user?.sessionId)) {
+        throw new Error('인증 정보가 없습니다.');
+      }
 
       return (
         <div className="bg-transparent-pattern">
@@ -188,16 +207,18 @@ const FileMessage = ({
               });
               e.target.onerror = null;
               e.target.src = '/images/placeholder-image.png';
-              setError('이미지를 불러올 수 없습니다.');
+              setPreviewError('이미지를 불러올 수 없습니다.');
             }}
             loading="lazy"
             data-testid="file-image-preview"
           />
+          {previewError && (
+            <div className="mt-2 text-xs text-amber-300">{previewError}</div>
+          )}
         </div>
       );
     } catch (error) {
       console.error('Image preview error:', error);
-      setError(error.message || '이미지 미리보기를 불러올 수 없습니다.');
       return (
         <div className="flex items-center justify-center h-full bg-gray-100">
           <Image className="w-8 h-8 text-gray-400" />
@@ -338,8 +359,8 @@ const FileMessage = ({
             {error && (
               <div>{error}</div>
             )}
-            {!error && renderFilePreview()}
-            {!error && msg.content && (
+            {renderFilePreview()}
+            {msg.content && (
               <div className="mt-3 text-base leading-relaxed">
                 <MessageContent content={msg.content} />
               </div>

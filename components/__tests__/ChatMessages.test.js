@@ -133,4 +133,36 @@ describe('ChatMessages', () => {
     expect(screen.getAllByTestId('message').length).toBeLessThan(messages.length);
     expect(screen.getByTestId('virtual-message-list')).toBeInTheDocument();
   });
+
+  it('keeps a recent own file message discoverable even outside the virtual window', () => {
+    const messages = Array.from({ length: 120 }, (_, index) => ({
+      _id: `message-${index}`,
+      content: `message ${index}`,
+      timestamp: new Date(Date.UTC(2026, 5, 20, 11, index)).toISOString(),
+      sender: { _id: 'other' },
+    }));
+
+    messages[100] = {
+      _id: 'recent-file-message',
+      content: 'recent own file message',
+      timestamp: new Date().toISOString(),
+      type: 'file',
+      sender: { _id: 'me' },
+      file: {
+        filename: 'test.jpg',
+        mimetype: 'image/jpeg',
+      },
+    };
+
+    render(
+      React.createElement(ChatMessages, {
+        messages,
+        currentUser: { _id: 'me' },
+        hasMoreMessages: false,
+      })
+    );
+
+    expect(screen.getByText('recent own file message')).toBeInTheDocument();
+    expect(screen.getAllByTestId('message').length).toBeLessThan(messages.length);
+  });
 });
