@@ -143,15 +143,29 @@ class FileService {
         };
       }
 
+      const uploadResponse = await axiosInstance.post(this.getApiUrl('/api/files/upload'), {
+        fileId: presignedUpload.fileId,
+      }, {
+        cancelToken: source.token,
+        withCredentials: true,
+      });
+
+      if (!uploadResponse.data || !uploadResponse.data.success) {
+        return {
+          success: false,
+          message: uploadResponse.data?.message || '파일 업로드 응답 처리에 실패했습니다.'
+        };
+      }
+
       if (onProgress) {
         onProgress(100);
       }
 
-      const fileData = completeResponse.data.file;
+      const fileData = uploadResponse.data.file;
       return {
         success: true,
         data: {
-          ...completeResponse.data,
+          ...uploadResponse.data,
           file: {
             ...fileData,
             url: this.getFileUrl(fileData.filename, true)
