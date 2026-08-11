@@ -6,6 +6,7 @@ import { useReactionHandling } from './useReactionHandling';
 import { useSocketHandling } from './useSocketHandling';
 import { useChatRoomState } from './useChatRoomState';
 import { useChatRoomLifecycle } from './useChatRoomLifecycle';
+import { useReadReceiptDebounce } from './useReadReceiptDebounce';
 import socketClient from '@/lib/socket/socketClient';
 
 export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
@@ -68,6 +69,15 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
     handleLoadMore,
     removeFilePreview,
   } = useMessageHandling(currentUser, roomId, undefined, messages, loadingMessages, setLoadingMessages, socketRef);
+
+  // [ADDED] 읽음 워터마크(markMessagesAsRead) emit을 room 단위로 단 하나만 소유하고
+  // debounce하는 훅. ReadStatus.js가 개별적으로 emit하던 걸 여기로 모은다
+  // (참고: features/chat/room/useReadReceiptDebounce.js).
+  const { handleMessageVisible } = useReadReceiptDebounce({
+    roomId,
+    socketRef,
+    currentUserId: currentUser?._id || currentUser?.id,
+  });
 
   // Cleanup 함수 수정
   const cleanup = useCallback((reason = 'MANUAL') => {
@@ -190,6 +200,7 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
     handleReactionAdd,
     handleReactionRemove,
     handleLoadMore,
+    handleMessageVisible, // [ADDED]
     cleanup,
 
     // Setters
