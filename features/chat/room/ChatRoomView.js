@@ -33,6 +33,7 @@ const ChatRoomView = ({ roomId, onNavigate, onReplace, asPath }) => {
     loadingMessages,
     hasMoreMessages,
     handleLoadMore,
+    handleMessageVisible, // [ADDED]
   } = useChatRoom({ roomId, onNavigate, onReplace, asPath });
 
   const renderLoadingState = () => (
@@ -141,6 +142,10 @@ const ChatRoomView = ({ roomId, onNavigate, onReplace, asPath }) => {
         loadingMessages={loadingMessages}
         hasMoreMessages={hasMoreMessages}
         onLoadMore={handleLoadMore}
+        // [ADDED] 이 prop을 끊으면(주석 처리) ReadStatus가 다시 예전처럼 즉시·개별
+        // emit하는 베이스라인 동작으로 돌아간다 — 최적화 전/후 emit 횟수를
+        // socketClient.js의 "[read-receipt]" 콘솔 로그로 비교할 때 사용.
+        onMessageVisible={handleMessageVisible}
       />
     );
   };

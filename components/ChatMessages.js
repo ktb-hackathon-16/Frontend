@@ -37,7 +37,8 @@ const ChatMessages = ({
   hasMoreMessages = true,
   onReactionAdd = () => {},
   onReactionRemove = () => {},
-  onLoadMore = () => {}
+  onLoadMore = () => {},
+  onMessageVisible = null // [ADDED] ReadStatus -> useReadReceiptDebounce로 이어지는 콜백. 각 메시지 컴포넌트에 그대로 전달된다.
 }) => {
   // 자동 스크롤 훅 (스크롤 복원 기능 포함)
   const { containerRef } = useAutoScroll(
@@ -83,7 +84,8 @@ const ChatMessages = ({
       currentUser,
       room,
       onReactionAdd,
-      onReactionRemove
+      onReactionRemove,
+      onMessageVisible // [ADDED] SystemMessage는 이 prop을 무시하므로 그냥 넘겨도 안전
     };
 
     const MessageComponent = {
@@ -108,7 +110,7 @@ const ChatMessages = ({
       />
       </div>
     );
-  }, [currentUser, room, isMine, onReactionAdd, onReactionRemove]);
+  }, [currentUser, room, isMine, onReactionAdd, onReactionRemove, onMessageVisible]);
 
   return (
     <VStack

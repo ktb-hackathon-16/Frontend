@@ -1,6 +1,9 @@
 const path = require('path');
 
-const workspaceRoot = __dirname;
+// [FIX] Turbopack workspace root를 모노레포 루트(ktb-BootcampChat)로 설정.
+// __dirname은 apps/frontend를 가리키는데, Turbopack이 여기를 root로 착각하면
+// next/package.json을 찾을 수 없다. 2단계 올라가서 실제 모노레포 루트를 가리켜야 함.
+const workspaceRoot = path.resolve(__dirname, '../../');
 const additionalDevOrigins = (process.env.DEV_ALLOWED_ORIGINS || '')
   .split(',')
   .map((origin) => origin.trim())

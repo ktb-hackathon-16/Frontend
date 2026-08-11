@@ -6,12 +6,13 @@ import CustomAvatar from './CustomAvatar';
 import ReadStatus from './ReadStatus';
 
 const UserMessage = ({
-  msg = {}, 
-  isMine = false, 
+  msg = {},
+  isMine = false,
   currentUser = null,
   onReactionAdd,
   onReactionRemove,
-  room = null
+  room = null,
+  onMessageVisible = null // [ADDED] ReadStatus -> 상위 room 단위 debounce 훅으로 전달할 콜백
 }) => {
   // 메시지 DOM 요소에 대한 ref 생성
   const messageDomRef = useRef(null);
@@ -81,7 +82,9 @@ const UserMessage = ({
             </div>
             {/* [CHANGED] readers={msg.readers} -> readReceipts/messageTimestamp/roomId.
                 Last Read Watermark 방식: room 단위 워터마크 맵을 메시지 timestamp와
-                비교해서 안읽음 인원을 계산한다 (참고: components/ReadStatus.js). */}
+                비교해서 안읽음 인원을 계산한다 (참고: components/ReadStatus.js).
+                [ADDED] onVisible={onMessageVisible}: 이 메시지가 보였다는 사실을
+                emit 없이 상위(room 단위 debounce 훅)로만 올려보낸다. */}
             <ReadStatus
               messageType={msg.type}
               participants={room?.participants || []}
@@ -91,6 +94,7 @@ const UserMessage = ({
               messageId={msg._id}
               messageRef={messageDomRef}
               currentUserId={currentUser?._id || currentUser?.id}
+              onVisible={onMessageVisible}
             />
           </HStack>
         </div>
