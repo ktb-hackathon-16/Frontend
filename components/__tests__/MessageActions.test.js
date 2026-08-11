@@ -42,8 +42,9 @@ describe('MessageActions', () => {
       value: vi.fn((command) => command === 'copy'),
     });
 
-    render(<MessageActions messageContent="복사할 메시지" />);
+    const { container } = render(<MessageActions messageContent="복사할 메시지" />);
 
+    fireEvent.mouseEnter(container.firstChild);
     fireEvent.click(screen.getByLabelText('메시지 복사'));
 
     await waitFor(() => {
@@ -65,8 +66,9 @@ describe('MessageActions', () => {
       value: undefined,
     });
 
-    render(<MessageActions messageContent="직접 복사할 메시지" />);
+    const { container } = render(<MessageActions messageContent="직접 복사할 메시지" />);
 
+    fireEvent.mouseEnter(container.firstChild);
     fireEvent.click(screen.getByLabelText('메시지 복사'));
 
     await waitFor(() => {

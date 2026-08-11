@@ -75,6 +75,7 @@ const MessageActions = ({
   room = null
 }) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showControls, setShowControls] = useState(false);
   const [tooltipStates, setTooltipStates] = useState({});
   const [leftOffset, setLeftOffset] = useState(0);
   const emojiPickerRef = useRef(null);
@@ -268,9 +269,25 @@ const MessageActions = ({
   }, []);
 
   return (
-    <div className={`flex flex-col gap-2 ${isMine ? 'items-end' : 'items-start'}`} ref={containerRef}>
+    <div
+      className={`flex flex-col gap-2 ${isMine ? 'items-end' : 'items-start'}`}
+      ref={containerRef}
+      onMouseEnter={() => setShowControls(true)}
+      onFocus={() => setShowControls(true)}
+      onMouseLeave={() => {
+        setShowControls(false);
+        setShowEmojiPicker(false);
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setShowControls(false);
+          setShowEmojiPicker(false);
+        }
+      }}
+    >
       {renderReactions()}
 
+      {showControls && (
       <HStack $css={{ gap: '$050', alignItems: 'center' }}>
         <div className="relative">
           <IconButton
@@ -322,6 +339,7 @@ const MessageActions = ({
           <CopyIcon size={16} />
         </IconButton>
       </HStack>
+      )}
     </div>
   );
 };

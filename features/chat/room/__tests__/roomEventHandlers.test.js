@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   appendIncomingMessage,
+  appendIncomingMessages,
   applyReadWatermark,
   toReadReceiptsMap,
   createRoomEventHandlers,
@@ -76,9 +77,17 @@ describe('roomEventHandlers', () => {
     expect(
       appendIncomingMessage(currentMessages, { _id: 'message-2' })
     ).toEqual([{ _id: 'message-1' }, { _id: 'message-2' }]);
+    expect(
+      appendIncomingMessages(currentMessages, [
+        { _id: 'message-1' },
+        { _id: 'message-2' },
+        { _id: 'message-3' },
+      ])
+    ).toEqual([{ _id: 'message-1' }, { _id: 'message-2' }, { _id: 'message-3' }]);
   });
 
   it('keeps live messages when the updater is invoked twice (StrictMode)', () => {
+    vi.useFakeTimers();
     const mountedRef = { current: true };
     const processedMessageIds = { current: new Set() };
     let committed = [];
@@ -110,11 +119,14 @@ describe('roomEventHandlers', () => {
     });
 
     handlers.onMessage({ _id: 'message-live' });
+    vi.advanceTimersByTime(50);
 
     expect(committed.map(message => message._id)).toEqual(['message-live']);
+    vi.useRealTimers();
   });
 
   it('creates room event handlers with mounted and processing guards', () => {
+    vi.useFakeTimers();
     const mountedRef = { current: true };
     const messageProcessingRef = { current: false };
     const processedMessageIds = { current: new Set() };
@@ -159,6 +171,7 @@ describe('roomEventHandlers', () => {
       lastReadAt: '2026-07-07T00:00:00.000Z',
     });
     handlers.onMessage({ _id: 'message-1' });
+    vi.advanceTimersByTime(50);
     handlers.onPreviousMessagesLoaded({ messages: [{ _id: 'message-2' }], hasMore: true });
     handlers.onMessageReactionUpdate({ messageId: 'message-1' });
     handlers.onSessionEnded();
@@ -176,5 +189,78 @@ describe('roomEventHandlers', () => {
     expect(logout).toHaveBeenCalledTimes(1);
     expect(onReplace).toHaveBeenCalledWith('/?error=session_expired');
     expect(showRejectedMessage).toHaveBeenCalledWith('blocked');
+    vi.useRealTimers();
+  });
+
+  it('batches incoming live messages before updating React state', () => {
+    vi.useFakeTimers();
+    const setMessages = vi.fn();
+    const handlers = createRoomEventHandlers({
+      mountedRef: { current: true },
+      messageProcessingRef: { current: false },
+      processedMessageIds: { current: new Set() },
+      initialLoadCompletedRef: { current: true },
+      processMessages: vi.fn(),
+      setRoom: vi.fn(),
+      setMessages,
+      setLoadingMessages: vi.fn(),
+      setError: vi.fn(),
+      setHasMoreMessages: vi.fn(),
+      cleanup: vi.fn(),
+      logout: vi.fn(),
+      onReplace: vi.fn(),
+      handleReactionUpdate: vi.fn(),
+      showRejectedMessage: vi.fn(),
+    });
+
+    handlers.onMessage({ _id: 'message-1' });
+    handlers.onMessage({ _id: 'message-2' });
+
+    expect(setMessages).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(50);
+
+    expect(setMessages).toHaveBeenCalledTimes(1);
+    expect(setMessages.mock.calls[0][0]([])).toEqual([
+      { _id: 'message-1' },
+      { _id: 'message-2' },
+    ]);
+    vi.useRealTimers();
+  });
+
+  it('updates read receipts from previousMessagesLoaded participantReadStates', () => {
+    const setRoom = vi.fn();
+    const processMessages = vi.fn();
+    const handlers = createRoomEventHandlers({
+      mountedRef: { current: true },
+      messageProcessingRef: { current: false },
+      processedMessageIds: { current: new Set() },
+      initialLoadCompletedRef: { current: false },
+      processMessages,
+      setRoom,
+      setMessages: vi.fn(),
+      setLoadingMessages: vi.fn(),
+      setError: vi.fn(),
+      setHasMoreMessages: vi.fn(),
+      cleanup: vi.fn(),
+      logout: vi.fn(),
+      onReplace: vi.fn(),
+      handleReactionUpdate: vi.fn(),
+      showRejectedMessage: vi.fn(),
+    });
+
+    handlers.onPreviousMessagesLoaded({
+      messages: [{ _id: 'message-1' }],
+      hasMore: false,
+      participantReadStates: [
+        { userId: 'user-1', lastReadAt: '2026-07-07T00:00:00.000Z' },
+        { userId: 'user-2', lastReadAt: null },
+      ],
+    });
+
+    expect(processMessages).toHaveBeenCalledWith([{ _id: 'message-1' }], false, true);
+    expect(setRoom).toHaveBeenCalledTimes(1);
+    expect(setRoom.mock.calls[0][0]({ readReceipts: {} })).toEqual({
+      readReceipts: { 'user-1': '2026-07-07T00:00:00.000Z' },
+    });
   });
 });
