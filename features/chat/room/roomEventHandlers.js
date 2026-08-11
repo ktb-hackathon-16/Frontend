@@ -142,7 +142,12 @@ export const createRoomEventHandlers = ({
         showRejectedMessage(error.message || '금칙어가 포함되어 메시지를 전송할 수 없습니다.');
         return;
       }
-      setError(error.message || '채팅 연결에 문제가 발생했습니다.');
+
+      if (error?.code === 'LOAD_ERROR' || error?.code === 'UNAUTHORIZED') {
+        setLoadingMessages(false);
+      }
+
+      setError(error?.message || '채팅 연결에 문제가 발생했습니다.');
     },
   };
 };

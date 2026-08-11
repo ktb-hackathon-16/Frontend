@@ -112,10 +112,14 @@ export const useMessageHandling = (
   /**
    * 이전 메시지 페이지 조회
    *
-   * 기존 before timestamp 대신
-   * (timestamp, messageId) 복합 cursor를 전송한다.
+   * 현재 화면에서 가장 오래된 메시지의
+   * (timestamp, messageId)를 복합 cursor로 전송한다.
+   *
+   * 응답 처리:
+   * - 메시지 반영: previousMessagesLoaded 이벤트 핸들러
+   * - 오류 및 timeout: 이 함수의 catch/finally
    */
-  const handleLoadMore = useCallback(() => {
+  const handleLoadMore = useCallback(async () => {
     if (!canSendOnRoomSocket()) {
       return;
     }
@@ -136,23 +140,48 @@ export const useMessageHandling = (
       return;
     }
 
+    const roomSocket = getRoomSocket();
+
+    if (!roomSocket?.connected) {
+      return;
+    }
+
     setLoadingMessages(true);
 
-    /*
-     * 응답 처리는 기존 previousMessagesLoaded
-     * 이벤트 핸들러가 담당한다.
-     */
-    socketClient.fetchPreviousMessages(
-      {
-        roomId,
-        limit: 30,
-        cursor: {
-          timestamp: cursorTimestamp,
-          messageId: oldestMessage._id,
+    try {
+      /*
+       * previousMessagesLoaded 이벤트는 기존
+       * roomEventHandlers가 처리한다.
+       *
+       * 여기서는 성공 응답, 서버 오류, timeout을 감지해
+       * loadingMessages가 영구적으로 true에 머무는 것을 막는다.
+       */
+      await socketClient.fetchPreviousMessagesAndWait(
+        {
+          roomId,
+          limit: 30,
+          cursor: {
+            timestamp: cursorTimestamp,
+            messageId: oldestMessage._id,
+          },
         },
-      },
-      getRoomSocket()
-    );
+        roomSocket,
+        {
+          timeoutMs: 10000,
+        }
+      );
+    } catch (error) {
+      /*
+       * 서버가 보낸 error 이벤트는 기존 onError 핸들러가
+       * 사용자 메시지를 표시한다.
+       *
+       * 여기서는 요청 실패와 timeout을 기록하고,
+       * finally에서 로딩 상태를 반드시 해제한다.
+       */
+      console.error('이전 메시지 조회 실패:', error);
+    } finally {
+      setLoadingMessages(false);
+    }
   }, [
     roomId,
     loadingMessages,
@@ -216,7 +245,9 @@ export const useMessageHandling = (
           error.message?.includes('인증') ||
           error.message?.includes('토큰')
         ) {
-          await handleSessionError();
+          if (typeof handleSessionError === 'function') {
+            await handleSessionError();
+          }
           return;
         }
 
