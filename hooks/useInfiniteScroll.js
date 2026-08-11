@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect } from 'react';
 
 /**
  * IntersectionObserver 기반 무한 스크롤 훅
@@ -16,57 +16,61 @@ export const useInfiniteScroll = (
   options = {}
 ) => {
   const sentinelRef = useRef(null);
-  const observerRef = useRef(null);
-
-  const handleIntersect = useCallback(
-    (entries) => {
-      const [entry] = entries;
-
-      if (entry.isIntersecting && hasMore && !isLoading) {
-        onLoadMore();
-      }
-    },
-    [onLoadMore, hasMore, isLoading]
-  );
+  const {
+    enabled = true,
+    rootRef = null,
+    rootMargin = '0px',
+    threshold = 0.1,
+  } = options;
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
-    if (!sentinel || !hasMore) {
+    if (
+      !sentinel ||
+      !hasMore ||
+      !enabled
+    ) {
       return;
     }
 
-    // IntersectionObserver 옵션 설정
     const observerOptions = {
-      root: options.root || null, // viewport 기준
-      rootMargin: options.rootMargin || '0px', // 200px 전에 미리 로드
-      threshold: options.threshold || 0.1, // 10% 이상 보이면 트리거
-      ...options
+      root: rootRef?.current ?? null,
+      rootMargin,
+      threshold,
     };
 
-    // Observer 생성
-    observerRef.current = new IntersectionObserver(
+    const handleIntersect = (entries) => {
+      const [entry] = entries;
+
+      if (
+        enabled &&
+        entry.isIntersecting &&
+        hasMore &&
+        !isLoading
+      ) {
+        onLoadMore();
+      }
+    };
+
+    const observer = new IntersectionObserver(
       handleIntersect,
       observerOptions
     );
 
-    observerRef.current.observe(sentinel);
+    observer.observe(sentinel);
 
     return () => {
-      if (observerRef.current && sentinel) {
-        observerRef.current.unobserve(sentinel);
-      }
+      observer.disconnect();
     };
-  }, [hasMore, handleIntersect, options]);
-
-  // 컴포넌트 언마운트 시 정리
-  useEffect(() => {
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-        observerRef.current = null;
-      }
-    };
-  }, []);
+  }, [
+    enabled,
+    hasMore,
+    isLoading,
+    onLoadMore,
+    rootRef,
+    rootMargin,
+    threshold,
+  ]);
 
   return { sentinelRef };
 };

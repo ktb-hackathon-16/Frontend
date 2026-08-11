@@ -1,4 +1,9 @@
-import { useRef, useEffect, useCallback } from 'react';
+import {
+  useRef,
+  useEffect,
+  useCallback,
+  useLayoutEffect,
+} from 'react';
 
 /**
  * 채팅 메시지 자동 스크롤 훅
@@ -12,7 +17,7 @@ import { useRef, useEffect, useCallback } from 'react';
  * @param {string} currentUserId - 현재 사용자 ID
  * @param {boolean} isLoadingMessages - 이전 메시지 로딩 중 여부
  * @param {number} threshold - 자동 스크롤 임계값 (px, 기본 100)
- * @returns {Object} { containerRef, scrollToBottom, isNearBottom }
+ * @returns {Object} { containerRef }
  */
 export const useAutoScroll = (
   messages = [], 
@@ -63,6 +68,31 @@ export const useAutoScroll = (
       isNearBottomRef.current = true;
     }, 300);
   }, []);
+
+  /**
+   * 초기 메시지는 화면이 그려지기 전에 최하단으로 즉시 이동한다.
+   *
+   * 초기 묶음을 일반적인 신규 메시지로 처리하면 smooth 스크롤과
+   * 상단 무한 스크롤 감지가 동시에 실행될 수 있으므로, 여기에서
+   * 메시지 개수까지 먼저 기록한다.
+   */
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    if (messages.length === 0) {
+      previousMessagesLengthRef.current = 0;
+      return;
+    }
+
+    if (previousMessagesLengthRef.current !== 0) {
+      return;
+    }
+
+    container.scrollTop = container.scrollHeight;
+    previousMessagesLengthRef.current = messages.length;
+    isNearBottomRef.current = true;
+  }, [messages.length]);
 
   /**
    * 스크롤 이벤트 핸들러 - 사용자가 스크롤할 때 위치 추적
@@ -163,20 +193,8 @@ export const useAutoScroll = (
     }
   }, [messages, currentUserId, scrollToBottom, isLoadingMessages]);
 
-  /**
-   * 초기 로드 시 최하단으로 스크롤
-   */
-  useEffect(() => {
-    if (messages.length > 0 && previousMessagesLengthRef.current === 0) {
-      // 초기 로드는 즉시 스크롤 (애니메이션 없이)
-      setTimeout(() => scrollToBottom('auto'), 100);
-    }
-  }, [messages.length, scrollToBottom]);
-
   return {
     containerRef,
-    scrollToBottom,
-    isNearBottom: () => isNearBottomRef.current
   };
 };
 
