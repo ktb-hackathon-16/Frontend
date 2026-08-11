@@ -81,50 +81,77 @@ class FileService {
     }
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
       const source = CancelToken.source();
       this.activeUploads.set(file.name, source);
 
-      const uploadUrl = this.baseUrl ?
-        `${this.baseUrl}/api/files/upload` :
-        '/api/files/upload';
+      if (onProgress) {
+        onProgress(1);
+      }
 
-      // token과 sessionId는 axios 인터셉터에서 자동으로 추가되므로
-      // 여기서는 명시적으로 전달하지 않아도 됩니다
-      const response = await axiosInstance.post(uploadUrl, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        },
-        // 업로드는 한도가 50MB 라 공통 타임아웃으로는 정상 전송도 끊긴다.
-        timeout: 30000,
+      const presignResponse = await axiosInstance.post(this.getApiUrl('/api/files/presign'), {
+        originalFilename: file.name,
+        contentType: file.type,
+        size: file.size,
+      }, {
         cancelToken: source.token,
         withCredentials: true,
+      });
+
+      const presignedUpload = presignResponse.data;
+      if (!presignedUpload?.uploadUrl || !presignedUpload?.fileId) {
+        this.activeUploads.delete(file.name);
+        return {
+          success: false,
+          message: '업로드 URL 발급에 실패했습니다.'
+        };
+      }
+
+      await axios.put(presignedUpload.uploadUrl, file, {
+        headers: {
+          ...(presignedUpload.headers || {}),
+          'Content-Type': file.type,
+        },
+        timeout: 60000,
+        cancelToken: source.token,
         onUploadProgress: (progressEvent) => {
-          if (onProgress) {
+          if (onProgress && progressEvent.total) {
             const percentCompleted = Math.round(
               (progressEvent.loaded * 100) / progressEvent.total
             );
-            onProgress(percentCompleted);
+            onProgress(Math.min(95, Math.max(1, percentCompleted)));
           }
         }
       });
 
+      if (onProgress) {
+        onProgress(97);
+      }
+
+      const completeResponse = await axiosInstance.post(this.getApiUrl('/api/files/complete'), {
+        fileId: presignedUpload.fileId,
+      }, {
+        cancelToken: source.token,
+        withCredentials: true,
+      });
+
       this.activeUploads.delete(file.name);
 
-      if (!response.data || !response.data.success) {
+      if (!completeResponse.data || !completeResponse.data.success) {
         return {
           success: false,
-          message: response.data?.message || '파일 업로드에 실패했습니다.'
+          message: completeResponse.data?.message || '파일 업로드 완료 처리에 실패했습니다.'
         };
       }
 
-      const fileData = response.data.file;
+      if (onProgress) {
+        onProgress(100);
+      }
+
+      const fileData = completeResponse.data.file;
       return {
         success: true,
         data: {
-          ...response.data,
+          ...completeResponse.data,
           file: {
             ...fileData,
             url: this.getFileUrl(fileData.filename, true)
@@ -149,6 +176,11 @@ class FileService {
       return this.handleUploadError(error);
     }
   }
+
+  getApiUrl(path) {
+    return this.baseUrl ? `${this.baseUrl}${path}` : path;
+  }
+
   getFileUrl(filename, forPreview = false) {
     if (!filename) return '';
 
