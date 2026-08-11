@@ -3,10 +3,20 @@ import { ConfirmOutlineIcon } from '@vapor-ui/icons';
 import { Text, HStack } from '@vapor-ui/core';
 import socketClient from '@/lib/socket/socketClient';
 
-const ReadStatus = ({ 
+// [CHANGED] components/ReadStatus.js — Last Read Watermark 방식으로 재작성.
+// Before: 메시지마다 실려오는 readers 배열(누가 이 메시지를 읽었는지 전부 나열)을
+//   participants와 비교해서 안읽음 인원을 계산했다.
+// After: 서버는 더 이상 메시지별 readers를 보내지 않는다. 대신 room 단위로
+//   "유저별 가장 마지막으로 읽은 시각(readReceipts)" 맵 하나만 유지하고,
+//   각 메시지는 자기 timestamp를 그 맵과 비교해서 "나(참여자)의 워터마크가
+//   이 메시지 시각보다 이전이면 아직 안읽음"으로 판단한다.
+// props도 readers -> readReceipts + messageTimestamp + roomId로 바뀌었다.
+const ReadStatus = ({
   messageType = 'text',
   participants = [],
-  readers = [],
+  readReceipts = {},
+  messageTimestamp = null,
+  roomId = null,
   className = '',
   messageId = null,
   messageRef = null, // 메시지 요소의 ref 추가
@@ -16,17 +26,20 @@ const ReadStatus = ({
   const statusRef = useRef(null);
   const observerRef = useRef(null);
 
-  // 읽지 않은 참여자 명단 생성 
+  const hasParticipantRead = useCallback((participantId, watermark) => {
+    if (!watermark || messageTimestamp == null) return false;
+    return new Date(watermark).getTime() >= new Date(messageTimestamp).getTime();
+  }, [messageTimestamp]);
+
+  // 읽지 않은 참여자 명단 생성
   const unreadParticipants = useMemo(() => {
     if (messageType === 'system') return [];
-    
-    return participants.filter(participant => 
-      !readers.some(reader => 
-        reader.userId === participant._id || 
-        reader.userId === participant.id
-      )
-    );
-  }, [participants, readers, messageType]);
+
+    return participants.filter(participant => {
+      const participantId = participant._id || participant.id;
+      return !hasParticipantRead(participantId, readReceipts[participantId]);
+    });
+  }, [participants, readReceipts, messageType, hasParticipantRead]);
 
   // 읽지 않은 참여자 수 계산
   const unreadCount = useMemo(() => {
@@ -38,21 +51,21 @@ const ReadStatus = ({
 
   // 메시지를 읽음으로 표시하는 함수
   const markMessageAsRead = useCallback(async () => {
-    if (!messageId || !currentUserId || hasMarkedAsRead || 
+    if (!messageId || !roomId || !currentUserId || hasMarkedAsRead ||
         messageType === 'system' || !socketClient.canSend()) {
       return;
     }
 
     try {
-      // Socket.IO를 통해 서버에 읽음 상태 전송
-      socketClient.markMessagesAsRead([messageId]);
+      // Socket.IO를 통해 서버에 읽음 워터마크 전송 ("여기까지 읽었다" 좌표 1개)
+      socketClient.markMessagesAsRead(roomId, messageId);
 
       setHasMarkedAsRead(true);
 
     } catch (error) {
       console.error('Error marking message as read:', error);
     }
-  }, [messageId, currentUserId, hasMarkedAsRead, messageType]);
+  }, [messageId, roomId, currentUserId, hasMarkedAsRead, messageType]);
 
   // Intersection Observer 설정
   useEffect(() => {
@@ -60,10 +73,8 @@ const ReadStatus = ({
       return;
     }
 
-    // 이미 읽은 메시지인지 확인
-    const isAlreadyRead = readers.some(reader => 
-      reader.userId === currentUserId
-    );
+    // 이미 읽은 메시지인지 확인 (내 워터마크가 이 메시지 시각 이후인가)
+    const isAlreadyRead = hasParticipantRead(currentUserId, readReceipts[currentUserId]);
 
     if (isAlreadyRead) {
       setHasMarkedAsRead(true);
@@ -92,7 +103,7 @@ const ReadStatus = ({
         observerRef.current.disconnect();
       }
     };
-  }, [messageRef, currentUserId, hasMarkedAsRead, messageType, readers, markMessageAsRead]);
+  }, [messageRef, currentUserId, hasMarkedAsRead, messageType, readReceipts, hasParticipantRead, markMessageAsRead]);
 
   // 시스템 메시지는 읽음 상태 표시 안 함
   if (messageType === 'system') {

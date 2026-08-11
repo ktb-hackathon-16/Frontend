@@ -1,116 +1,140 @@
 # Frontend 배포 가이드
 
-운영 배포는 **latest 태그를 쓰지 않고**, 로컬에서 태그가 붙은 Docker 이미지를
-빌드한 뒤 Docker Hub에 push하고 EC2에서 pull/run 합니다.
+## 🚀 새로운 배포 워크플로우
 
-Next.js의 `NEXT_PUBLIC_*` 값은 브라우저 번들에 **빌드 시점에 포함**됩니다.
-따라서 이미지 빌드 시 ALB public DNS를 넣어야 하며, `10.0.x.x` private IP나
-직접 포트는 넣지 않습니다.
+### 개요
+로컬에서 빌드한 결과물을 서버로 전송하고, 서버에서는 재시작만 하는 방식으로 배포합니다.
 
-## 기본 정보
+### 장점
+- ✅ 서버 리소스 절약 (빌드를 로컬에서 수행)
+- ✅ 빠른 배포 (서버에서 빌드 시간 제거)
+- ✅ 서버에 전체 node_modules 불필요
+- ✅ 롤백 용이 (빌드 결과물 보관 가능)
 
-- Docker Hub image: `youngjin179/ktb-frontend:<TAG>`
-- Frontend EC2: `10.0.2.228`
-- ALB: `http://public-ktb-alb-974381789.ap-northeast-2.elb.amazonaws.com`
-- EC2 env: `/etc/ktb/frontend-app.env`
-- EC2 compose: `/home/ubuntu/ktb-chat-frontend/docker-compose.yaml`
+---
 
-## 1. 태그 설정
+## 📋 배포 프로세스
 
-Frontend repo root에서 실행합니다.
-
+### 1. 로컬에서 배포 실행
 ```bash
-export DOCKER_NS=youngjin179
-export TAG=$(git rev-parse --short HEAD)-smoke1
-export ALB_URL=http://public-ktb-alb-974381789.ap-northeast-2.elb.amazonaws.com
+cd apps/frontend
+make deploy
 ```
 
-예:
+### 2. 자동으로 수행되는 작업
 
-```text
-youngjin179/ktb-frontend:abc1234-smoke1
-```
+#### 로컬 (빌드 단계)
+1. `pnpm run build:production` 실행
+   - Next.js 빌드 수행
+   - static 파일을 standalone 디렉토리로 복사
+   - public 파일을 standalone 디렉토리로 복사
 
-## 2. Docker Hub 로그인
+#### 서버로 전송 (배포 단계)
+2. 빌드 결과물만 서버로 전송
+   - `.next/standalone/` → 서버의 배포 디렉토리
+   - `.next/static` → 서버의 `.next/static`
+   - `public` → 서버의 `public`
+   - `restart.sh` → 서버의 `restart.sh`
 
+#### 서버 (재시작 단계)
+3. 서버에서 `restart.sh` 실행
+   - 기존 프로세스 종료
+   - 새로운 standalone 서버 시작
+   - 서버 시작 확인
+
+---
+
+## 🔧 사용 가능한 명령어
+
+### 로컬 빌드만 수행
 ```bash
-docker login
+make build-local
 ```
 
-## 3. 이미지 빌드/푸시
-
+### 전체 배포 (빌드 + 전송 + 재시작)
 ```bash
-docker build \
-  --build-arg NEXT_PUBLIC_API_URL=$ALB_URL \
-  --build-arg NEXT_PUBLIC_SOCKET_URL=$ALB_URL \
-  -t $DOCKER_NS/ktb-frontend:$TAG \
-  .
-
-docker push $DOCKER_NS/ktb-frontend:$TAG
+make deploy
 ```
 
-## 4. EC2 env 확인
-
-Frontend EC2에서 `/etc/ktb/frontend-app.env`를 관리합니다. 로컬 `.env.local`,
-`.env.production`은 서버에 복사하지 않습니다.
-
-필수 ALB URL:
-
-```env
-NEXT_PUBLIC_API_URL=http://public-ktb-alb-974381789.ap-northeast-2.elb.amazonaws.com
-NEXT_PUBLIC_SOCKET_URL=http://public-ktb-alb-974381789.ap-northeast-2.elb.amazonaws.com
-```
-
-확인:
-
+### 특정 서버에만 배포
 ```bash
-sudo awk -F= '/^(NEXT_PUBLIC_API_URL|NEXT_PUBLIC_SOCKET_URL)=/ {print $1}' /etc/ktb/frontend-app.env
+DEPLOY_SERVERS="your-frontend-server1 your-frontend-server2" make deploy
 ```
 
-## 5. compose 파일 배포
-
+### 배포 경로 변경
 ```bash
-make deploy-compose DEPLOY_SERVERS=ktb-frontend
+DEPLOY_PATH=/custom/path make deploy
 ```
 
-`make deploy-compose`는 아래 명령의 wrapper입니다.
+---
 
-```bash
-rsync -az docker-compose.yaml ktb-frontend:/home/ubuntu/ktb-chat-frontend/
+## 📁 배포되는 파일 구조
+
+서버에 배포되는 디렉토리 구조:
+```
+/home/ubuntu/ktb-chat-frontend/
+├── .next/
+│   ├── static/          # 정적 리소스 (CSS, JS 등)
+│   └── standalone/
+│       └── server.js    # Next.js standalone 서버
+├── public/              # 공개 정적 파일
+├── node_modules/        # 최소한의 런타임 dependencies (standalone에 포함)
+├── package.json         # 패키지 정보
+├── restart.sh           # 서버 재시작 스크립트
+└── app.log              # 서버 로그
+
 ```
 
-## 6. EC2에서 새 이미지 실행
+---
 
+## 🔍 트러블슈팅
+
+### 배포 실패 시 체크리스트
+1. SSH 접속 확인
+   ```bash
+   ssh your-frontend-server1 "echo 'Connection OK'"
+   ```
+
+2. 서버 디스크 공간 확인
+   ```bash
+   ssh your-frontend-server1 "df -h"
+   ```
+
+3. 서버 로그 확인
+   ```bash
+   ssh your-frontend-server1 "cd /home/ubuntu/ktb-chat-frontend && tail -100 app.log"
+   ```
+
+### 서버에서 수동 재시작
 ```bash
-FRONTEND_IMAGE=$DOCKER_NS/ktb-frontend:$TAG \
-make compose-up-servers DEPLOY_SERVERS=ktb-frontend
-```
-
-직접 EC2에서 실행하려면:
-
-```bash
-export TAG=<실제_TAG>
-sudo docker pull youngjin179/ktb-frontend:$TAG
-
+ssh your-frontend-server1
 cd /home/ubuntu/ktb-chat-frontend
-sudo env FRONTEND_IMAGE=youngjin179/ktb-frontend:$TAG \
-  docker-compose -f docker-compose.yaml up -d
+./restart.sh
 ```
 
-## 7. 확인
-
+### 서버 상태 확인
 ```bash
-sudo docker ps --filter name=frontend-app
-curl -I http://localhost:3000
-sudo docker logs -f frontend-app
+ssh your-frontend-server1 "ps aux | grep 'node .next/standalone/server.js'"
 ```
 
-## make는 왜 쓰나?
+---
 
-`make`는 Docker를 대체하지 않습니다. SSH/rsync/docker-compose 명령을 짧게
-부르는 wrapper입니다.
+## 📊 기존 vs 새로운 워크플로우 비교
 
-- 이미지 생성: `docker build`
-- 이미지 업로드: `docker push`
-- EC2 실행: `docker-compose up -d`
-- 반복 명령 단축: `make deploy-compose`, `make compose-up-servers`
+| 항목 | 기존 방식 | 새로운 방식 |
+|------|-----------|-------------|
+| 빌드 위치 | 서버 | 로컬 |
+| 전송 용량 | 소스코드 전체 | 빌드 결과물만 |
+| 서버 리소스 | 높음 (빌드) | 낮음 (실행만) |
+| 배포 시간 | 느림 (빌드 포함) | 빠름 (전송+재시작) |
+| node_modules | 전체 필요 | 최소한만 필요 |
+| 롤백 | 어려움 | 쉬움 |
+
+---
+
+## 📝 관련 파일
+
+- `package.json`: 빌드 스크립트 정의
+- `Makefile`: 배포 자동화 스크립트
+- `restart.sh`: 서버 재시작 스크립트
+- `next.config.js`: Next.js standalone 출력 설정

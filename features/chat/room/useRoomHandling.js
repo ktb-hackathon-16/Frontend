@@ -6,6 +6,7 @@ import api, { getAuthHeaders } from '@/lib/api/client';
 import {
   createRoomEventHandlers,
   processLoadedRoomMessages,
+  toReadReceiptsMap,
 } from './roomEventHandlers';
 
 export const useRoomHandling = ({
@@ -265,6 +266,13 @@ export const useRoomHandling = ({
       processMessages(joinResult.messages, joinResult.hasMore, true);
     }
 
+    // [ADDED] features/chat/room/useRoomHandling.js: joinRoomSuccess가 실어보내는
+    // participantReadStates(참가자별 읽음 워터마크 스냅샷)로 room.readReceipts를 채운다.
+    // 재연결 시에도 다른 유저들이 그동안 어디까지 읽었는지 다시 동기화해야 하므로 필요하다.
+    if (joinResult?.participantReadStates) {
+      setRoom(prev => ({ ...prev, readReceipts: toReadReceiptsMap(joinResult.participantReadStates) }));
+    }
+
     if (mountedRef.current) {
       setupCompleteRef.current = true;
     }
@@ -275,6 +283,7 @@ export const useRoomHandling = ({
     setupCompleteRef,
     joinRoom,
     processMessages,
+    setRoom,
   ]);
 
   const loadInitialMessages = useCallback(
@@ -373,6 +382,12 @@ export const useRoomHandling = ({
           } else {
             await loadInitialMessages(roomId);
           }
+
+          // [ADDED] features/chat/room/useRoomHandling.js: 방 최초 입장 시에도
+          // 참가자별 읽음 워터마크 스냅샷으로 room.readReceipts를 초기화한다.
+          if (joinResult?.participantReadStates) {
+            setRoom(prev => ({ ...prev, readReceipts: toReadReceiptsMap(joinResult.participantReadStates) }));
+          }
         }
 
         if (mountedRef.current) {
@@ -423,6 +438,7 @@ export const useRoomHandling = ({
     currentUser,
     initializingRef,
     setupCompleteRef,
+    setRoom,
   ]);
 
   useEffect(() => {

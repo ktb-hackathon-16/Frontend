@@ -79,10 +79,15 @@ const UserMessage = ({
             <div className={`text-xs ${isMine ? 'text-blue-400' : 'text-gray-300'}`}>
               {formattedTime}
             </div>
+            {/* [CHANGED] readers={msg.readers} -> readReceipts/messageTimestamp/roomId.
+                Last Read Watermark 방식: room 단위 워터마크 맵을 메시지 timestamp와
+                비교해서 안읽음 인원을 계산한다 (참고: components/ReadStatus.js). */}
             <ReadStatus
               messageType={msg.type}
               participants={room?.participants || []}
-              readers={msg.readers || []}
+              readReceipts={room?.readReceipts || {}}
+              messageTimestamp={msg.timestamp}
+              roomId={room?._id || room?.id}
               messageId={msg._id}
               messageRef={messageDomRef}
               currentUserId={currentUser?._id || currentUser?.id}

@@ -212,6 +212,10 @@ describe('useRoomHandling', () => {
       roomId: 'room-1',
       messages: [{ _id: 'join-message-1', timestamp: '2026-07-07T00:00:00.000Z' }],
       hasMore: false,
+      // [ADDED] Last Read Watermark 방식: 방 입장 시 참가자별 초기 워터마크 스냅샷.
+      participantReadStates: [
+        { userId: 'user-2', lastReadMessageId: 'message-0', lastReadAt: '2026-07-06T00:00:00.000Z' },
+      ],
     });
     socketClient.fetchPreviousMessagesAndWait.mockResolvedValue({
       messages: [{ _id: 'message-1', timestamp: '2026-07-07T00:00:00.000Z' }],
@@ -272,6 +276,13 @@ describe('useRoomHandling', () => {
     );
     expect(harness.setters.setIsInitialized).not.toHaveBeenCalled();
     expect(harness.setupCompleteRef.current).toBe(true);
+
+    // [ADDED] joinRoomSuccess의 participantReadStates로 room.readReceipts가
+    // 초기화되는지 확인 (Last Read Watermark 방식).
+    const readReceiptsUpdate = harness.setters.setRoom.mock.calls
+      .map(([updater]) => updater({}))
+      .find((next) => next?.readReceipts);
+    expect(readReceiptsUpdate?.readReceipts).toEqual({ 'user-2': '2026-07-06T00:00:00.000Z' });
   });
 
   it('falls back to fetching previous messages when join response has no messages', async () => {
@@ -323,10 +334,12 @@ describe('useRoomHandling', () => {
     const handlers = socketClient.subscribeRoomEvents.mock.calls[0][1];
     act(() => {
       handlers.onParticipantsUpdate([{ _id: 'user-2' }]);
+      // [CHANGED] onMessagesRead payload: messageIds 배열 -> lastReadMessageId/lastReadAt 워터마크.
       handlers.onMessagesRead({
         userId: 'user-2',
-        messageIds: ['message-1'],
-        timestamp: '2026-07-07T00:00:01.000Z',
+        roomId: 'room-1',
+        lastReadMessageId: 'message-1',
+        lastReadAt: '2026-07-07T00:00:01.000Z',
       });
       handlers.onMessage({ _id: 'message-2', timestamp: '2026-07-07T00:00:02.000Z' });
       handlers.onPreviousMessagesLoaded({

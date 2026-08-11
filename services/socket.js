@@ -1,36 +1,49 @@
 import { io } from 'socket.io-client';
 
+// 소켓 정리를 수행하는 이유를 정의한 상수 (연결 끊김, 수동 종료, 재연결)
 const CLEANUP_REASONS = {
   DISCONNECT: 'disconnect',
   MANUAL: 'manual',
   RECONNECT: 'reconnect'
 };
 
+/**
+ * 실시간 통신(Socket.io)을 관리하는 클래스입니다.
+ * 앱 전체에서 단일 인스턴스(Singleton)로 동작하여 불필요한 중복 연결을 방지합니다.
+ */
 export class SocketService {
   constructor() {
-    this.socket = null;
-    this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 5;
-    this.isReconnecting = false;
-    this.connectionPromise = null;
-    this.connectionReject = null;
-    this.connectionTimeout = null;
-    this.retryDelay = 1000;
-    this.connected = false;
+    this.socket = null;               // 현재 연결된 socket.io 인스턴스
+    this.reconnectAttempts = 0;       // 현재 재연결 시도 횟수
+    this.maxReconnectAttempts = 5;    // 최대 허용 재연결 횟수
+    this.isReconnecting = false;      // 현재 재연결 진행 여부
+    this.connectionPromise = null;    // 중복 연결 방지를 위한 비동기 연결 상태 Promise
+    this.connectionReject = null;     // 연결 실패 시 호출될 거절(reject) 함수
+    this.connectionTimeout = null;    // 연결 타임아웃 타이머
+    this.retryDelay = 1000;           // 재연결 시도 간격 (기본 1초)
+    this.connected = false;           // 소켓 연결 상태
   }
 
+  /**
+   * 서버와 웹소켓 연결을 시작합니다.
+   * 이미 연결 중이거나 연결된 상태라면 기존 연결을 재사용합니다.
+   */
   async connect(options = {}) {
+    // 연결을 시도하는 중이라면 해당 진행 상황(Promise)을 바로 반환 (동시 연결 방지)
     if (this.connectionPromise) {
       return this.connectionPromise;
     }
 
+    // 이미 연결이 완료된 상태라면 현재 소켓 인스턴스를 반환
     if (this.socket?.connected) {
       return Promise.resolve(this.socket);
     }
 
+    // 새로운 연결을 위한 Promise 생성
     const connectionPromise = new Promise((resolve, reject) => {
       let socket = null;
 
+        // 성공 시
       const resolveConnection = (connectedSocket) => {
         if (connectedSocket !== this.socket) {
           return;
@@ -41,6 +54,7 @@ export class SocketService {
         resolve(connectedSocket);
       };
 
+       // 실패 시
       const rejectConnection = (error, failedSocket = socket) => {
         if (failedSocket && failedSocket !== this.socket) {
           return;
@@ -52,35 +66,47 @@ export class SocketService {
         reject(error);
       };
 
+
       try {
+        // 1. 기존 연결 정리 (만약 남아있는 연결이 있다면 확실하게 끊고 버립니다)
         if (this.socket) {
           this.cleanupSocket(this.socket);
         }
 
+        // 2. 서버 주소 가져오기 (환경 변수에서 서버의 웹소켓 URL을 가져옵니다)
         const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL;
 
+        // 3. 실제 소켓 연결 생성 (전화 걸기)
         socket = io(socketUrl, {
           ...options,
-          transports: ['websocket', 'polling'],
-          reconnection: true,
-          reconnectionAttempts: this.maxReconnectAttempts,
-          reconnectionDelay: this.retryDelay,
-          reconnectionDelayMax: 5000,
-          timeout: 20000,
-          forceNew: true
+          transports: ['websocket', 'polling'], // 연결 방식: 웹소켓 우선 시도, 실패시 폴링(주기적 요청) 사용
+          reconnection: true,                   // 끊어지면 자동 재연결 활성화
+          reconnectionAttempts: this.maxReconnectAttempts, // 최대 재연결 시도 횟수 (5번)
+          reconnectionDelay: this.retryDelay,   // 재연결 시도 간격 (기본 1초)
+          reconnectionDelayMax: 5000,           // 재연결 시도 최대 간격 (점점 늘어나서 최대 5초)
+          timeout: 20000,                       // 20초 안에 응답이 없으면 연결 실패 처리
+          forceNew: true                        // 기존 연결을 재사용하지 않고 무조건 새 연결(새 전화선)을 생성
         });
+        
+        // 4. 생성된 소켓을 클래스 변수에 저장하여 앱 전체에서 쓸 수 있게 합니다
         this.socket = socket;
+        
+        // 5. 연결 과정에서 에러가 발생했을 때(Reject) 호출될 함수를 등록합니다
         this.connectionReject = (error) => rejectConnection(error, socket);
+        
+        // 6. 무한정 기다리는 것을 막기 위한 타이머(30초) 설정
         this.connectionTimeout = setTimeout(() => {
           if (socket !== this.socket) {
-            return;
+            return; // 그 사이에 소켓 인스턴스가 바뀌었다면 현재 타이머는 무시
           }
 
           if (!socket.connected) {
+            // 30초가 지났는데도 연결이 안 되어 있다면 '타임아웃' 에러 발생
             rejectConnection(new Error('Connection timeout'), socket);
           }
         }, 30000);
 
+        // 7. 연결 성공/실패/에러 등을 감지하는 이벤트 리스너들을 부착합니다
         this.setupEventHandlers(socket, resolveConnection, rejectConnection);
 
       } catch (error) {
@@ -96,14 +122,18 @@ export class SocketService {
     return this.connectionPromise;
   }
 
+  /**
+   * 소켓에서 발생하는 주요 이벤트들(연결, 에러, 끊김 등)에 대한 동작을 설정합니다.
+   */
   setupEventHandlers(socket, resolve, reject) {
+    // 1. 정상적으로 연결이 완료되었을 때의 이벤트
     socket.on('connect', () => {
       if (socket !== this.socket) {
         return;
       }
 
       this.connected = true;
-      this.reconnectAttempts = 0;
+      this.reconnectAttempts = 0; // 연결 성공 시 재연결 시도 횟수 초기화
       this.isReconnecting = false;
       resolve(socket);
     });
@@ -209,7 +239,12 @@ export class SocketService {
     reject(error);
   }
 
+  /**
+   * 소켓 연결과 관련된 상태 및 타이머를 초기화/정리합니다.
+   * @param {string} reason 정리하는 이유 (수동, 끊김, 재연결 등)
+   */
   cleanup(reason = CLEANUP_REASONS.MANUAL) {
+    // 연결 끊김 이벤트가 발생했지만 이미 재연결을 시도 중이라면 무시합니다.
     if (reason === CLEANUP_REASONS.DISCONNECT && this.isReconnecting) {
       return;
     }
@@ -248,6 +283,10 @@ export class SocketService {
     }
   }
 
+  /**
+   * 서버로 특정 이벤트와 데이터를 전송합니다.
+   * @example socketService.send('send_message', { text: '안녕하세요' })
+   */
   send(event, data) {
     if (!this.socket?.connected) {
       throw new Error('Socket is not connected');
@@ -277,11 +316,15 @@ export class SocketService {
     }
   }
 
+  /**
+   * 수동으로 소켓 재연결을 시도합니다.
+   */
   async reconnect() {
+    // 이미 재연결 중이라면 중복 실행 방지
     if (this.isReconnecting) return;
 
     this.isReconnecting = true;
-    this.rejectPendingConnection(new Error('Connection disconnected'));
+    this.rejectPendingConnection(new Error('Connection disconnected')); // 기존 연결 취소
     this.connectionPromise = null;
 
     if (this.socket) {

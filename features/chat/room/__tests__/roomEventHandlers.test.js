@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   appendIncomingMessage,
-  applyReadReceipts,
+  applyReadWatermark,
+  toReadReceiptsMap,
   createRoomEventHandlers,
   processLoadedRoomMessages,
 } from '../roomEventHandlers';
@@ -35,34 +36,35 @@ describe('roomEventHandlers', () => {
     expect(initialLoadCompletedRef.current).toBe(true);
   });
 
-  it('applies read receipts without duplicating existing readers', () => {
-    const messages = [
-      {
-        _id: 'message-1',
-        readers: [{ userId: 'user-2', readAt: 'existing' }],
-      },
-      {
-        _id: 'message-2',
-        readers: [],
-      },
-    ];
+  // [CHANGED] applyReadReceipts(messages, payload) -> applyReadWatermark(room, payload).
+  // Last Read Watermark 방식: 메시지별 readers 배열 대신 room.readReceipts에
+  // "유저별 마지막으로 읽은 시각" 1개만 갱신한다.
+  it('advances the room read watermark for a user', () => {
+    const room = { _id: 'room-1', readReceipts: { 'user-1': '2026-07-06T00:00:00.000Z' } };
 
     expect(
-      applyReadReceipts(messages, {
+      applyReadWatermark(room, {
         userId: 'user-2',
-        messageIds: ['message-1', 'message-2'],
-        timestamp: '2026-07-07T00:00:00.000Z',
+        roomId: 'room-1',
+        lastReadMessageId: 'message-2',
+        lastReadAt: '2026-07-07T00:00:00.000Z',
       })
-    ).toEqual([
-      {
-        _id: 'message-1',
-        readers: [{ userId: 'user-2', readAt: 'existing' }],
+    ).toEqual({
+      _id: 'room-1',
+      readReceipts: {
+        'user-1': '2026-07-06T00:00:00.000Z',
+        'user-2': '2026-07-07T00:00:00.000Z',
       },
-      {
-        _id: 'message-2',
-        readers: [{ userId: 'user-2', readAt: '2026-07-07T00:00:00.000Z' }],
-      },
-    ]);
+    });
+  });
+
+  it('converts participantReadStates into a readReceipts map', () => {
+    expect(
+      toReadReceiptsMap([
+        { userId: 'user-1', lastReadMessageId: 'message-1', lastReadAt: '2026-07-06T00:00:00.000Z' },
+        { userId: 'user-2', lastReadMessageId: null, lastReadAt: null },
+      ])
+    ).toEqual({ 'user-1': '2026-07-06T00:00:00.000Z' });
   });
 
   it('appends incoming messages only once', () => {
@@ -148,10 +150,13 @@ describe('roomEventHandlers', () => {
     });
 
     handlers.onParticipantsUpdate([{ _id: 'user-1' }]);
+    // [CHANGED] onMessagesRead payload: messageIds 배열 -> lastReadMessageId/lastReadAt
+    // 워터마크 1개. 이제 setRoom을 호출한다 (메시지별 배열이 아니라 room.readReceipts 갱신).
     handlers.onMessagesRead({
       userId: 'user-1',
-      messageIds: ['message-1'],
-      timestamp: '2026-07-07T00:00:00.000Z',
+      roomId: 'room-1',
+      lastReadMessageId: 'message-1',
+      lastReadAt: '2026-07-07T00:00:00.000Z',
     });
     handlers.onMessage({ _id: 'message-1' });
     handlers.onPreviousMessagesLoaded({ messages: [{ _id: 'message-2' }], hasMore: true });
@@ -159,8 +164,11 @@ describe('roomEventHandlers', () => {
     handlers.onSessionEnded();
     handlers.onError({ code: 'MESSAGE_REJECTED', message: 'blocked' });
 
+    // setRoom: onParticipantsUpdate 1회 + onMessagesRead(워터마크 갱신) 1회 = 2회
+    expect(setRoom).toHaveBeenCalledTimes(2);
     expect(setRoom).toHaveBeenCalledWith(expect.any(Function));
-    expect(setMessages).toHaveBeenCalledTimes(2);
+    // setMessages: onMessage 1회만 (onMessagesRead는 더 이상 setMessages를 호출하지 않음)
+    expect(setMessages).toHaveBeenCalledTimes(1);
     expect(processMessages).toHaveBeenCalledWith([{ _id: 'message-2' }], true, true);
     expect(setLoadingMessages).toHaveBeenCalledWith(false);
     expect(handleReactionUpdate).toHaveBeenCalledWith({ messageId: 'message-1' });
