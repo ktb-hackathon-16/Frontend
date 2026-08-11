@@ -300,6 +300,42 @@ describe('useRoomHandling', () => {
     );
   });
 
+  it('completes room setup before fallback initial messages finish', async () => {
+    socketClient.joinRoomAndWait.mockResolvedValueOnce({ roomId: 'room-1' });
+    let resolveMessages;
+    socketClient.fetchPreviousMessagesAndWait.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveMessages = resolve;
+      })
+    );
+    const harness = createHarness();
+
+    await act(async () => {
+      await harness.result.current.setupRoom();
+    });
+
+    expect(harness.actions.setupSucceeded).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: 'room-1' }),
+    );
+    expect(harness.setupCompleteRef.current).toBe(true);
+    expect(socketClient.fetchPreviousMessagesAndWait).toHaveBeenCalledWith(
+      { roomId: 'room-1', limit: 30 },
+      harness.socketRef.current,
+      expect.objectContaining({ timeoutMs: 5000 }),
+    );
+    expect(harness.actions.setupSucceeded.mock.invocationCallOrder[0])
+      .toBeLessThan(socketClient.fetchPreviousMessagesAndWait.mock.invocationCallOrder[0]);
+    expect(harness.setters.setLoadingMessages).toHaveBeenCalledWith(true);
+
+    await act(async () => {
+      resolveMessages({ messages: [], hasMore: false });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(harness.setters.setLoadingMessages).toHaveBeenLastCalledWith(false);
+  });
+
   it('records setup failure through semantic reducer actions', async () => {
     api.get.mockResolvedValueOnce({
       data: {

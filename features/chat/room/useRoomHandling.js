@@ -373,14 +373,12 @@ export const useRoomHandling = ({
           setupEventListeners();
         }
 
-        // 4. Join Room and Load Messages
+        // 4. Join Room
         if (mountedRef.current && socketRef.current?.connected) {
           const joinResult = await joinRoom(roomId);
 
           if (Array.isArray(joinResult?.messages)) {
             processMessages(joinResult.messages, joinResult.hasMore, true);
-          } else {
-            await loadInitialMessages(roomId);
           }
 
           // [ADDED] features/chat/room/useRoomHandling.js: 방 최초 입장 시에도
@@ -388,9 +386,28 @@ export const useRoomHandling = ({
           if (joinResult?.participantReadStates) {
             setRoom(prev => ({ ...prev, readReceipts: toReadReceiptsMap(joinResult.participantReadStates) }));
           }
+
+          if (mountedRef.current) {
+            setupCompleteRef.current = true;
+            setupSucceeded(roomData);
+          }
+
+          if (!Array.isArray(joinResult?.messages)) {
+            setLoadingMessages(true);
+            loadInitialMessages(roomId)
+              .catch((error) => {
+                console.warn('Initial message load failed after room setup', error);
+                Toast.error('메시지를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.');
+              })
+              .finally(() => {
+                if (mountedRef.current) {
+                  setLoadingMessages(false);
+                }
+              });
+          }
         }
 
-        if (mountedRef.current) {
+        if (mountedRef.current && !setupCompleteRef.current) {
           setupCompleteRef.current = true;
           setupSucceeded(roomData);
         }
@@ -439,6 +456,7 @@ export const useRoomHandling = ({
     initializingRef,
     setupCompleteRef,
     setRoom,
+    setLoadingMessages,
   ]);
 
   useEffect(() => {
